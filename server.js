@@ -9,7 +9,7 @@ app.use(express.json({ limit: "10mb" }))
 const PROJECT_URL = "https://framer.com/projects/CORNERGROUP_PROJECT_URL_BURAYA"
 
 // ⚠️  CORNERGROUP İÇİN AYRI BİR FRAMER API KEY OLUŞTUR (Framer Settings → API)
-const API_KEY = "fr_CORNERGROUP_API_KEY_BURAYA"
+const API_KEY = "fr_5qm5mhq9fd9wxb4d48jj780vtd"
 
 // Webhook güvenliği — n8n'de header olarak gönderilecek
 const SECRET = "cornergroup2026"
