@@ -6,7 +6,7 @@ app.use(express.json({ limit: "10mb" }))
 
 // ==================== CORNERGROUP KONFİGÜRASYONU ====================
 // ⚠️  BURAYA CORNERGROUP FRAMER PROJESİNİN URL'İNİ YAPIŞTIR
-const PROJECT_URL = "https://framer.com/projects/CORNERGROUP_PROJECT_URL_BURAYA"
+const PROJECT_URL = "https://framer.com/projects/Corner-group--7qESOYgYF03Hz62fGaB9-78YRk"
 
 // ⚠️  CORNERGROUP İÇİN AYRI BİR FRAMER API KEY OLUŞTUR (Framer Settings → API)
 const API_KEY = "fr_5qm5mhq9fd9wxb4d48jj780vtd"
