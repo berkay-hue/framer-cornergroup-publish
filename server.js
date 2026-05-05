@@ -5,23 +5,22 @@ const app = express()
 app.use(express.json({ limit: "10mb" }))
 
 // ==================== CORNERGROUP KONFİGÜRASYONU ====================
-// ⚠️  BURAYA CORNERGROUP FRAMER PROJESİNİN URL'İNİ YAPIŞTIR
 const PROJECT_URL = "https://framer.com/projects/Corner-group--7qESOYgYF03Hz62fGaB9-78YRk"
-
-// ⚠️  CORNERGROUP İÇİN AYRI BİR FRAMER API KEY OLUŞTUR (Framer Settings → API)
 const API_KEY = "fr_5qm5mhq9fd9wxb4d48jj780vtd"
-
-// Webhook güvenliği — n8n'de header olarak gönderilecek
 const SECRET = "cornergroup2026"
+const COLLECTION_NAME = "Articles"
 
-// ⚠️  CMS oluşturduktan sonra `/inspect` çağırıp field ID'lerini buraya yaz
+// Cornergroup CMS field ID'leri (/inspect çıktısından alındı, hepsi gerçek)
 const FIELDS = {
-  title:     "FILL_ME",
-  shortText: "FILL_ME",
-  date:      "FILL_ME",
-  content:   "FILL_ME",
-  featured:  "FILL_ME",
-  image:     "FILL_ME",
+  title:       "mxtaaMQPw",  // Title (string)
+  excerpt:     "XyBL7dh8D",  // Excerpt (formattedText)
+  category:    "BryvG7EN5",  // Category (formattedText)
+  publishedAt: "CvBbKbjn1",  // PublishedAt (date)
+  author:      "dDa7nZcFD",  // Author (formattedText)
+  coverImage:  "lHEfEQLTF",  // CoverImage (image)
+  readingTime: "AM0ywAZ0Q",  // ReadingTime (number)
+  content:     "Zf6oompEb",  // Content (formattedText)
+  featured:    "eYXOke2TY",  // Featured (formattedText - "true"/"false" string olarak yazılıyor)
 }
 
 // ==================== HELPERS ====================
@@ -36,6 +35,21 @@ function asString(v) {
   return String(v)
 }
 
+function toFormattedText(text) {
+  if (!text) return ""
+  if (text.includes("<p") || text.includes("<h") || text.includes("<div")) return text
+  return text
+    .split(/\n\n+/)
+    .map(p => `<p dir="auto">${p.trim().replace(/\n/g, "<br/>")}</p>`)
+    .join("")
+}
+
+function estimateReadingTime(content) {
+  const text = (content || "").replace(/<[^>]+>/g, "")
+  const words = text.trim().split(/\s+/).length
+  return Math.max(1, Math.ceil(words / 200))
+}
+
 // ==================== ERROR HANDLERS ====================
 process.on("unhandledRejection", (reason) => {
   console.error("⚠️ UNHANDLED REJECTION:", reason)
@@ -48,11 +62,10 @@ process.on("uncaughtException", (err) => {
 app.get("/", (req, res) => res.json({
   status: "ok",
   service: "cornergroup-framer-publish",
+  collection: COLLECTION_NAME,
   endpoints: ["/inspect?secret=Y", "POST /sync-and-publish", "POST /publish-only"]
 }))
 
-// /inspect — Framer collection'ın field ID'lerini öğrenmek için
-// Kullanım: GET /inspect?secret=cornergroup2026
 app.get("/inspect", async (req, res) => {
   if (req.query.secret !== SECRET) return res.status(401).json({ error: "Unauthorized" })
 
@@ -60,11 +73,11 @@ app.get("/inspect", async (req, res) => {
   try {
     framer = await connect(PROJECT_URL, API_KEY)
     const collections = await framer.getCollections()
-    const articles = collections.find(c => c.name === "Articles")
+    const articles = collections.find(c => c.name === COLLECTION_NAME)
     if (!articles) {
       await framer.disconnect()
       return res.status(404).json({
-        error: "Articles collection bulunamadı",
+        error: `"${COLLECTION_NAME}" collection bulunamadı`,
         availableCollections: collections.map(c => c.name)
       })
     }
@@ -83,7 +96,6 @@ app.get("/inspect", async (req, res) => {
   }
 })
 
-// /sync-and-publish — n8n'den gelen blog yazısını Framer CMS'e ekler + publish eder
 app.post("/sync-and-publish", async (req, res) => {
   if (req.headers["x-secret"] !== SECRET) {
     return res.status(401).json({ error: "Unauthorized" })
@@ -93,12 +105,15 @@ app.post("/sync-and-publish", async (req, res) => {
   ;(async () => {
     let framer
     try {
-      const title      = asString(req.body.title)
-      const slug       = asString(req.body.slug)
-      const content    = asString(req.body.content)
-      const dateRaw    = asString(req.body.date)
-      const image_url  = asString(req.body.image_url)
-      const short_text = asString(req.body.short_text)
+      const title       = asString(req.body.title)
+      const slug        = asString(req.body.slug)
+      const content     = asString(req.body.content)
+      const dateRaw     = asString(req.body.date)
+      const image_url   = asString(req.body.image_url)
+      const short_text  = asString(req.body.short_text)
+      const category    = asString(req.body.category) || "Genel"
+      const author      = asString(req.body.author) || "Corner Group"
+      const featured    = req.body.featured === true || req.body.featured === "true"
 
       console.log("===== YENİ CORNERGROUP BLOG =====")
       console.log("Title:", title)
@@ -111,8 +126,8 @@ app.post("/sync-and-publish", async (req, res) => {
       console.log("✓ Baglandı")
 
       const collections = await framer.getCollections()
-      const articles = collections.find(c => c.name === "Articles")
-      if (!articles) throw new Error("Articles bulunamadı")
+      const articles = collections.find(c => c.name === COLLECTION_NAME)
+      if (!articles) throw new Error(`${COLLECTION_NAME} bulunamadı`)
 
       const existingItems = await articles.getItems()
       if (existingItems.find(item => item.slug === slug)) {
@@ -125,23 +140,33 @@ app.post("/sync-and-publish", async (req, res) => {
       try { isoDate = new Date(dateRaw || Date.now()).toISOString() }
       catch { isoDate = new Date().toISOString() }
 
+      const formattedContent = toFormattedText(content)
+      const excerptText = short_text || title.substring(0, 150)
+      const readTime = estimateReadingTime(content)
+
+      // Featured formattedText olduğu için string olarak yazıyoruz ("true"/"false")
+      // Blog component'i bunu okurken includes("true") ile kontrol edebilir
+      const featuredHtml = featured ? `<p dir="auto">true</p>` : `<p dir="auto">false</p>`
+
       const fieldData = {
-        [FIELDS.title]:     { type: "string",        value: title },
-        [FIELDS.shortText]: { type: "string",        value: short_text || title.substring(0, 150) },
-        [FIELDS.date]:      { type: "date",          value: isoDate },
-        [FIELDS.content]:   { type: "formattedText", value: content },
-        [FIELDS.featured]:  { type: "boolean",       value: false },
+        [FIELDS.title]:       { type: "string",        value: title },
+        [FIELDS.excerpt]:     { type: "formattedText", value: toFormattedText(excerptText) },
+        [FIELDS.category]:    { type: "formattedText", value: toFormattedText(category) },
+        [FIELDS.publishedAt]: { type: "date",          value: isoDate },
+        [FIELDS.author]:      { type: "formattedText", value: toFormattedText(author) },
+        [FIELDS.readingTime]: { type: "number",        value: readTime },
+        [FIELDS.content]:     { type: "formattedText", value: formattedContent },
+        [FIELDS.featured]:    { type: "formattedText", value: featuredHtml },
       }
 
       if (image_url && image_url.startsWith("http")) {
-        fieldData[FIELDS.image] = { type: "image", value: image_url }
+        fieldData[FIELDS.coverImage] = { type: "image", value: image_url }
       }
 
       console.log("→ addItems çağrılıyor...")
       await articles.addItems([{ slug, fieldData }])
       console.log("✓ Item eklendi")
 
-      // Framer'ın internal state senkronizasyonu için 2sn bekle
       await new Promise(r => setTimeout(r, 2000))
       console.log("→ Publish başlıyor...")
 
@@ -169,7 +194,6 @@ app.post("/sync-and-publish", async (req, res) => {
   })()
 })
 
-// /publish-only — Manuel publish tetikleyici
 app.post("/publish-only", async (req, res) => {
   if (req.headers["x-secret"] !== SECRET) {
     return res.status(401).json({ error: "Unauthorized" })
@@ -206,4 +230,5 @@ app.post("/publish-only", async (req, res) => {
 
 app.listen(process.env.PORT || 3000, () => {
   console.log("Cornergroup server çalışıyor: port", process.env.PORT || 3000)
+  console.log("Collection:", COLLECTION_NAME)
 })
